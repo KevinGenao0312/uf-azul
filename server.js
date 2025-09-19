@@ -17,7 +17,7 @@ const amount = Number(linkPayload.amount).toFixed(2);
 
 // 4) Construye el payload a PaymentPage de AZUL **con CurrencyCode numérico**
 const azulPayload = {
-  OrderNumber: linkPayload.orderId,      // o como lo llames internamente
+  OrderNumber: linkPayload.orderid,      // o como lo llames internamente
   Amount: amount,                        // "1500.00"
   CurrencyCode: currencyCode,            // 214  <- CLAVE
   MerchantType: merchantType,            // "C"
