@@ -1,103 +1,94 @@
 import express from 'express';
 import bodyParser from 'body-parser';
+import crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 
 const app = express();
-const PORT = process.env.PORT || 10000;
-
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
-const links = {};
+// ===== CONFIG =====
+const CFG = {
+  MID: process.env.AZUL_MERCHANT_ID || '39402060016',
+  MNAME: process.env.AZUL_MERCHANT_NAME || 'UNIVERSAL FITNESS ECOM',
+  MTYPE: process.env.AZUL_MERCHANT_TYPE || 'MerchantType',
+  CCODE: process.env.AZUL_CURRENCY_CODE || 'RD$', // ← CORRECTO
+  KEY: process.env.AZUL_AUTH_KEY || '',
+  PAGE: 'https://pagos.azul.com.do/PaymentPage/Default.aspx',
+  RETURN: process.env.AZUL_RETURN_URL || 'https://universalfitness.com.do/azul-response/'
+};
 
-// Utilidad para convertir a decimal fijo
-function safeDecimal(val, fallback = '0.00') {
-  const num = Number(val);
-  return isNaN(num) ? fallback : num.toFixed(2);
+const TOKENS = new Map();
+const toMinor = n => Math.round(Number(n) * 100).toString();
+const h512 = (s, key) => crypto.createHmac('sha512', key).update(s, 'utf8').digest('hex');
+
+function buildRequestHash(p) {
+  const concat = [
+    p.MerchantId, p.MerchantName, p.MerchantType, p.CurrencyCode,
+    p.OrderNumber, p.Amount, p.ITBIS,
+    p.ApprovedUrl, p.DeclinedUrl, p.CancelUrl,
+    '', '', '', '', '', '', CFG.KEY
+  ].join('');
+  return h512(concat, CFG.KEY);
 }
 
-// Endpoint para crear link de pago
+// 1) Crear link desde Voiceflow u otro
 app.post('/vf/azul/create-link', (req, res) => {
-  const {
-    orderId = uuidv4(),
-    amount = 0,
-    itbis = 0,
-    currencyCode,
-    merchantType
-  } = req.body;
+  const { orderId, amount, itbis = 0 } = req.body || {};
+  if (!orderId || !amount) return res.status(400).json({ error: 'orderId y amount son obligatorios' });
+  if (!CFG.KEY) return res.status(500).json({ error: 'AZUL_AUTH_KEY no configurada' });
 
-  const id = uuidv4();
+  const token = uuidv4();
+  TOKENS.set(token, {
+    orderId,
+    amountMinor: toMinor(amount),
+    itbisMinor: toMinor(itbis),
+    expiresAt: Date.now() + 30 * 60 * 1000 // 30 minutos
+  });
 
-  links[id] = {
-    orderId: orderId.toString().trim(),
-    amount: safeDecimal(amount),
-    itbis: safeDecimal(itbis),
-    currencyCode: (currencyCode || process.env.AZUL_CURRENCY_CODE || '214').toString().trim(),
-    merchantType: (merchantType || process.env.AZUL_MERCHANT_TYPE || 'C').toString().trim()
+  const origin = `https://${req.headers.host}`;
+  const pay_url = `${origin}/pay/${token}`;
+  res.json({ pay_url });
+});
+
+// 2) Página de redirección a Azul con form auto-submit
+app.get('/pay/:token', (req, res) => {
+  const data = TOKENS.get(req.params.token);
+  if (!data || Date.now() > data.expiresAt) {
+    return res.status(410).send('Este enlace expiró. Solicita uno nuevo.');
+  }
+
+  const payload = {
+    MerchantId:   CFG.MID,
+    MerchantName: CFG.MNAME,
+    MerchantType: CFG.MTYPE,
+    CurrencyCode: CFG.CCODE,
+    OrderNumber:  data.orderId,
+    Amount:       data.amountMinor,
+    ITBIS:        data.itbisMinor,
+    ApprovedUrl:  CFG.RETURN,
+    DeclinedUrl:  CFG.RETURN,
+    CancelUrl:    CFG.RETURN
   };
+  payload.AuthHash = buildRequestHash(payload);
 
-  // ✅ Genera dinámicamente el pay_url desde el request real
-  const protocol = req.protocol;
-  const host = req.get('host');
-  const payUrl = `${protocol}://${host}/pay/${id}`;
+  const inputs = Object.entries(payload)
+    .map(([k,v]) => `<input type="hidden" name="${k}" value="${String(v)}">`).join('\n');
 
-  res.json({ pay_url: payUrl });
+  const html = `
+  <!doctype html><html><head><meta charset="utf-8"><title>Conectando con AZUL…</title></head>
+  <body onload="document.forms[0].submit()">
+    <form action="${CFG.PAGE}" method="post">
+      ${inputs}
+      <noscript><button type="submit">Pagar</button></noscript>
+    </form>
+  </body></html>`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
 });
 
-// Endpoint para redirigir a la pasarela de AZUL
-app.get('/pay/:id', (req, res) => {
-  const data = links[req.params.id];
+// Health check (opcional)
+app.get('/health', (_, res) => res.send('ok'));
 
-  if (!data) return res.status(404).send('Link no encontrado');
-
-  const azulPayload = {
-    MerchantId: process.env.AZUL_MERCHANT_ID,
-    MerchantType: data.merchantType,
-    CurrencyCode: data.currencyCode,
-    OrderNumber: data.orderId,
-    Amount: data.amount,
-    ApprovedUrl: process.env.AZUL_RETURN_URL,
-    DeclinedUrl: process.env.AZUL_RETURN_URL,
-    CancelUrl: process.env.AZUL_RETURN_URL
-  };
-
-  console.log('AZUL payload =>', azulPayload);
-
-  const azulURL = 'https://www.azul.com.do/webservices/PaymentPage.aspx';
-
-  const formHtml = `
-    <html>
-      <body onload="document.forms[0].submit()">
-        <form action="${azulURL}" method="post">
-          ${Object.entries(azulPayload)
-            .map(([k, v]) => `<input type="hidden" name="${k}" value="${v}" />`)
-            .join('\n')}
-          <noscript><button type="submit">Click para pagar</button></noscript>
-        </form>
-      </body>
-    </html>
-  `;
-
-  res.send(formHtml);
-});
-
-// Endpoint opcional de prueba
-app.get('/test/azul', (req, res) => {
-  const testPayload = {
-    MerchantId: process.env.AZUL_MERCHANT_ID,
-    MerchantType: 'C',
-    CurrencyCode: '214',
-    OrderNumber: 'TEST123',
-    Amount: '100.00',
-    ApprovedUrl: process.env.AZUL_RETURN_URL,
-    DeclinedUrl: process.env.AZUL_RETURN_URL,
-    CancelUrl: process.env.AZUL_RETURN_URL
-  };
-
-  console.log('TEST PAYLOAD =>', testPayload);
-  res.json({ message: 'Payload de prueba para AZUL', payload: testPayload });
-});
-
-// Inicio del servidor
-app.listen(PORT, () => {
-  console.log(`AZUL PaymentLink server running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log('UF AZUL server on :' + PORT));
