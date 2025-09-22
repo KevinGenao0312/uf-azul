@@ -63,7 +63,7 @@ app.get('/pay/:id', (req, res) => {
 
   console.log('AZUL payload =>', azulPayload);
 
-  const azulURL = 'https://sandbox.azul.com.do/webservices/PaymentPage.aspx';
+const azulURL = 'https://www.azul.com.do/webservices/PaymentPage.aspx';
 
   const formHtml = `
     <html>
