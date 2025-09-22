@@ -9,12 +9,13 @@ app.use(bodyParser.json());
 
 const links = {};
 
+// Utilidad para convertir a decimal fijo
 function safeDecimal(val, fallback = '0.00') {
   const num = Number(val);
   return isNaN(num) ? fallback : num.toFixed(2);
 }
 
-// Crea link desde Voiceflow
+// Endpoint para crear link de pago
 app.post('/vf/azul/create-link', (req, res) => {
   const {
     orderId = uuidv4(),
@@ -34,21 +35,19 @@ app.post('/vf/azul/create-link', (req, res) => {
     merchantType: (merchantType || process.env.AZUL_MERCHANT_TYPE || 'C').toString().trim()
   };
 
-  const baseUrl = process.env.BASE_URL;
-  if (!baseUrl) {
-    return res.status(500).json({ error: 'BASE_URL not set in environment' });
-  }
+  // ✅ Genera dinámicamente el pay_url desde el request real
+  const protocol = req.protocol;
+  const host = req.get('host');
+  const payUrl = `${protocol}://${host}/pay/${id}`;
 
-  res.json({
-    pay_url: `${baseUrl}/pay/${id}`
-  });
+  res.json({ pay_url: payUrl });
 });
 
-// Endpoint de redirección real a AZUL (form auto-submit)
+// Endpoint para redirigir a la pasarela de AZUL
 app.get('/pay/:id', (req, res) => {
   const data = links[req.params.id];
 
-  if (!data) return res.status(404).send('Link not found');
+  if (!data) return res.status(404).send('Link no encontrado');
 
   const azulPayload = {
     MerchantId: process.env.AZUL_MERCHANT_ID,
@@ -63,7 +62,7 @@ app.get('/pay/:id', (req, res) => {
 
   console.log('AZUL payload =>', azulPayload);
 
-const azulURL = 'https://www.azul.com.do/webservices/PaymentPage.aspx';
+  const azulURL = 'https://www.azul.com.do/webservices/PaymentPage.aspx';
 
   const formHtml = `
     <html>
@@ -81,7 +80,7 @@ const azulURL = 'https://www.azul.com.do/webservices/PaymentPage.aspx';
   res.send(formHtml);
 });
 
-// Test de debug
+// Endpoint opcional de prueba
 app.get('/test/azul', (req, res) => {
   const testPayload = {
     MerchantId: process.env.AZUL_MERCHANT_ID,
@@ -98,6 +97,7 @@ app.get('/test/azul', (req, res) => {
   res.json({ message: 'Payload de prueba para AZUL', payload: testPayload });
 });
 
+// Inicio del servidor
 app.listen(PORT, () => {
   console.log(`AZUL PaymentLink server running on port ${PORT}`);
 });
