@@ -12,8 +12,8 @@ const CFG = {
   MID: process.env.AZUL_MERCHANT_ID || '39402060016',
   MNAME: process.env.AZUL_MERCHANT_NAME || 'UNIVERSAL FITNESS ECOM',
   MTYPE: process.env.AZUL_MERCHANT_TYPE || 'MerchantType',
-  CCODE: process.env.AZUL_CURRENCY_CODE || 'RD$', // ← CORRECTO
-  KEY: process.env.AZUL_AUTH_KEY || '',
+  CCODE: process.env.AZUL_CURRENCY_CODE || 'RD$', // ← Esto puede ser "214" o "RD$" según configuración de AZUL
+  KEY: process.env.AZUL_AUTH_KEY || 'ExgdHfSFJTuRBQCnIUNdrdVfcatDazTCrsSDpuJPtHnHzXwEgOaEkrNvSgWkbiXdfnmuanzqadgqtusmrputcbnhtyssvnkawygpljrsictuccpxfetrwpkbvgcjhrig',
   PAGE: 'https://pagos.azul.com.do/PaymentPage/Default.aspx',
   RETURN: process.env.AZUL_RETURN_URL || 'https://universalfitness.com.do/azul-response/'
 };
@@ -59,30 +59,35 @@ app.get('/pay/:token', (req, res) => {
   }
 
   const payload = {
-    MerchantId:   CFG.MID,
+    MerchantId: CFG.MID,
     MerchantName: CFG.MNAME,
     MerchantType: CFG.MTYPE,
     CurrencyCode: CFG.CCODE,
-    OrderNumber:  data.orderId,
-    Amount:       data.amountMinor,
-    ITBIS:        data.itbisMinor,
-    ApprovedUrl:  CFG.RETURN,
-    DeclinedUrl:  CFG.RETURN,
-    CancelUrl:    CFG.RETURN
+    OrderNumber: data.orderId,
+    Amount: data.amountMinor,
+    ITBIS: data.itbisMinor,
+    ApprovedUrl: CFG.RETURN,
+    DeclinedUrl: CFG.RETURN,
+    CancelUrl: CFG.RETURN
   };
   payload.AuthHash = buildRequestHash(payload);
 
   const inputs = Object.entries(payload)
-    .map(([k,v]) => `<input type="hidden" name="${k}" value="${String(v)}">`).join('\n');
+    .map(([k, v]) => `<input type="hidden" name="${k}" value="${String(v)}">`) 
+    .join('\n');
 
   const html = `
-  <!doctype html><html><head><meta charset="utf-8"><title>Conectando con AZUL…</title></head>
-  <body onload="document.forms[0].submit()">
-    <form action="${CFG.PAGE}" method="post">
-      ${inputs}
-      <noscript><button type="submit">Pagar</button></noscript>
-    </form>
-  </body></html>`;
+  <!doctype html>
+  <html>
+    <head><meta charset="utf-8"><title>Conectando con AZUL…</title></head>
+    <body onload="document.forms[0].submit()">
+      <form action="${CFG.PAGE}" method="post">
+        ${inputs}
+        <noscript><button type="submit">Pagar</button></noscript>
+      </form>
+    </body>
+  </html>`;
+
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 });
