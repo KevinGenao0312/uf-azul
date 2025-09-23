@@ -12,7 +12,7 @@ const CFG = {
   MID: process.env.AZUL_MERCHANT_ID || '39402060016',
   MNAME: process.env.AZUL_MERCHANT_NAME || 'UNIVERSAL FITNESS ECOM',
   MTYPE: process.env.AZUL_MERCHANT_TYPE || 'MerchantType',
-  CCODE: process.env.AZUL_CURRENCY_CODE || 'RD$', // ← Esto puede ser "214" o "RD$" según configuración de AZUL
+  CCODE: process.env.AZUL_CURRENCY_CODE || '214', // ← Esto puede ser "214" o "RD$" según configuración de AZUL
   KEY: process.env.AZUL_AUTH_KEY || 'ExgdHfSFJTuRBQCnIUNdrdVfcatDazTCrsSDpuJPtHnHzXwEgOaEkrNvSgWkbiXdfnmuanzqadgqtusmrputcbnhtyssvnkawygpljrsictuccpxfetrwpkbvgcjhrig',
   PAGE: 'https://pagos.azul.com.do/PaymentPage/Default.aspx',
   RETURN: process.env.AZUL_RETURN_URL || 'https://universalfitness.com.do/azul-response/'
